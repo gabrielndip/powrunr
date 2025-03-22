@@ -1,12 +1,25 @@
 Package: powrunr
-Title: What the Package Does (One Line, Title Case)
+Title: Power Analysis Through Simulation
 Version: 0.0.0.9000
 Authors@R: 
-    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"),
-           comment = c(ORCID = "YOUR-ORCID-ID"))
-Description: What the package does (one paragraph).
-License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
-    license
+    person("First", "Last", , "first.last@example.com", role = c("aut", "cre"))
+Description: Generate simulated data and calculate statistical power for
+    planned experiments.
+License: MIT + file LICENSE
+Depends: 
+    R (>= 4.0.0)
+Imports: 
+    dplyr,
+    emmeans,
+    ggplot2,
+    magrittr,
+    MASS,
+    purrr,
+    stats,
+    tibble
+Authors: Gabriel Teku
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 RoxygenNote: 7.3.2
+Suggests: 
+    testthat
