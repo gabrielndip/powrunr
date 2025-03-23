@@ -14,7 +14,7 @@ Imports:
     ggplot2,
     magrittr,
     MASS,
-    purrr,
+    rlang,
     stats,
     tibble
 Authors: Gabriel Teku
