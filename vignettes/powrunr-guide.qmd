@@ -1,0 +1,434 @@
+---
+title: "powrunr: Comprehensive Guide to Simulation-Based Power Analysis"
+author: "Gabriel Teku"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Comprehensive Guide to Simulation-Based Power Analysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+format: 
+  html:
+    toc: true
+    toc-depth: 3
+    toc-location: left
+    theme: cosmo
+    code-folding: show
+    code-tools: true
+    df-print: paged
+    highlight-style: github
+    fig-width: 8
+    fig-height: 5
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  comment = "#>",
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 8,
+  fig.height = 5,
+  out.width = "100%",
+  dpi = 300
+)
+set.seed(2202)
+```
+
+# Introduction to Statistical Power Analysis
+
+Statistical power analysis is a critical component of experimental design that helps researchers determine the sample size required to detect an effect of a given size with a specified level of confidence. The `powrunr` package provides a flexible, simulation-based approach to power analysis for a variety of statistical methods.
+
+## Why Use Simulation-Based Power Analysis?
+
+While analytical power calculations are available for simple designs, simulation-based approaches offer several advantages:
+
+1.  **Flexibility**: Works with complex experimental designs
+2.  **Realism**: Can incorporate realistic data characteristics
+3.  **Robustness**: Tests assumptions by generating data from known distributions
+4.  **Accessibility**: Easier to understand and customize
+
+# Package Architecture
+
+The `powrunr` package is structured in a layered approach:
+
+1.  **Data Generation Layer**:
+    -   `generate_data()`: Generates random data from various distributions
+    -   `mock_df()`: Creates data frames with treatment and control groups (inherits `generate_data()`)
+2.  **Simulation Layer**:
+    -   `anova_runr()`: ANOVA-based power analysis
+    -   `dunnett_runr()`: Dunnett's test power analysis
+    -   `nb_runr()`: Negative binomial regression power analysis
+    -   `pois_runr()`: Poisson regression power analysis
+    -   `logit_runr()`: Logistic regression power analysis
+3.  **Visualization Layer**:
+    -   `plot_pwr()`: Creates power curves with flexible grouping and faceting options
+
+This design allows users to focus on the appropriate level of abstraction for their needs.
+
+# Basic Workflow
+
+Let's walk through a typical workflow using `powrunr`.
+
+## Step 1: Load Packages
+
+```{r}
+devtools::install("/Users/gabrielteku/powrunr", dependencies = TRUE)
+library(powrunr)
+library(tidyverse)
+```
+
+## Step 2: Define Parameters
+
+```{r}
+# Set parameters for simulation
+mean_value <- 100       # Control group mean
+sd_levels <- c(10, 15)  # Standard deviations to test
+sample_sizes <- 5:15    # Sample sizes to test
+max_effect <- 20        # Maximum treatment effect (difference from control)
+num_sim <- 1000           # Number of simulations (use 500+ for real analyses)
+```
+
+## Step 3: Create Scenarios
+
+```{r}
+# Create all combinations of parameters we want to test
+scenarios <- expand.grid(
+  n = sample_sizes,
+  sd = sd_levels
+)
+
+# Display the first few scenarios
+head(scenarios)
+```
+
+## Step 4: Run Simulations
+
+```{r}
+# Run ANOVA simulations for each scenario
+sim_results <- lapply(1:nrow(scenarios), function(i) {
+  anova_runr(
+    num_sim = num_sim,
+    n = scenarios$n[i],
+    mean = mean_value,
+    sd = scenarios$sd[i],
+    max_trt_eff = max_effect,
+    ntrts = 3  # Control + 2 treatment groups
+  )
+})
+
+# First few rows of the first simulation result
+head(sim_results[[1]])
+```
+
+## Step 5: Calculate Power
+
+```{r}
+# Combine and summarize results to calculate power
+power_summary <- do.call(rbind, sim_results) %>%
+  group_by(n, sd) %>%
+  summarize(p.value = mean(p.value < 0.05, na.rm = TRUE), .groups = "drop")
+
+# View power summary
+power_summary
+```
+
+## Step 6: Visualize Results
+
+```{r}
+# Define color palette
+colpal <- c("#00BFC4", "#F8766D")
+
+# Create power plot
+power_plot <- plot_pwr(power_summary, colpal, group = "sd", facet = NULL)
+print(power_plot)
+```
+
+# Working with Different Tests and Data Types
+
+The `powrunr` package supports multiple statistical tests and data distributions to accommodate various experimental designs.
+
+## ANOVA vs. Dunnett's Test
+
+When comparing multiple treatments to a control, Dunnett's test offers more power by controlling the family-wise error rate specifically for comparisons to control.
+
+```{r}
+# Run Dunnett simulations for the same scenarios
+dunnett_results <- lapply(1:nrow(scenarios), function(i) {
+  dunnett_runr(
+    num_sim = num_sim,
+    n = scenarios$n[i],
+    mean = mean_value,
+    sd = scenarios$sd[i],
+    max_trt_eff = max_effect,
+    ntrts = 3
+  )
+})
+
+# Calculate power for Dunnett's test
+dunnett_power <- do.call(rbind, dunnett_results) %>%
+  group_by(n, sd) %>%
+  summarize(p.value = mean(p.value < 0.05, na.rm = TRUE), .groups = "drop")
+
+# Combine ANOVA and Dunnett power for comparison
+combined_power <- bind_rows(
+  mutate(power_summary, method = "ANOVA"),
+  mutate(dunnett_power, method = "Dunnett")
+)
+
+# Create comparison plot for SD = 10
+sd10_comparison <- combined_power %>%
+  filter(sd == 10) %>%
+  plot_pwr(colpal, group = "method", facet = NULL)
+
+print(sd10_comparison)
+```
+
+## Count Data: Poisson Regression
+
+For count data, `pois_runr()` provides power analysis for Poisson regression.
+
+```{r}
+# Set parameters for count data
+mean_count <- 5         # Mean count for control group
+max_count_effect <- 2   # Maximum treatment effect
+count_sizes <- 5:15     # Sample sizes to test
+
+# Run Poisson simulations
+pois_results <- lapply(count_sizes, function(n_val) {
+  pois_runr(
+    num_sim = num_sim,
+    n = n_val,
+    mean = mean_count,
+    max_trt_eff = max_count_effect,
+    ntrts = 3,
+    distribution = "poisson"
+  )
+})
+
+# Calculate power
+pois_power <- do.call(rbind, pois_results) %>%
+  group_by(n) %>%
+  summarize(p.value = mean(p.value < 0.05, na.rm = TRUE), .groups = "drop")
+
+# Plot power curve
+ggplot(pois_power, aes(x = as.factor(n), y = p.value, group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0.8, linetype = "dashed") +
+  theme_bw() +
+  labs(x = "Sample Size per Group", y = "Statistical Power",
+       title = "Power Analysis for Poisson Regression") +
+  ylim(0, 1)
+```
+
+## Binary Data: Logistic Regression
+
+For binary outcomes, `logit_runr()` provides power analysis for logistic regression.
+
+```{r}
+# Set parameters for binary data
+prob_success <- 0.3     # Probability in control group
+prob_effect <- 0.2      # Effect size (difference in probability)
+binary_sizes <- seq(10, 60, by = 5)  # Sample sizes to test
+
+# Run logistic regression simulations
+logit_results <- lapply(binary_sizes, function(n_val) {
+  logit_runr(
+    num_sim = num_sim,
+    n = n_val,
+    max_trt_eff = prob_effect,
+    ntrts = 3,
+    prob = prob_success,
+    distribution = "logistic"
+  )
+})
+
+# Calculate power
+logit_power <- do.call(rbind, logit_results) %>%
+  group_by(n) %>%
+  summarize(p.value = mean(p.value < 0.05, na.rm = TRUE), .groups = "drop")
+
+# Plot power curve
+ggplot(logit_power, aes(x = as.factor(n), y = p.value, group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0.8, linetype = "dashed") +
+  theme_bw() +
+  labs(x = "Sample Size per Group", y = "Statistical Power",
+       title = "Power Analysis for Logistic Regression") +
+  ylim(0, 1)
+```
+
+## Overdispersed Count Data: Negative Binomial Regression
+
+For count data with overdispersion (variance \> mean), `nb_runr()` provides power analysis using negative binomial regression.
+
+::: callout-note
+**Note on Negative Binomial Models**: Negative binomial models can sometimes have convergence issues, especially with small sample sizes or rare events. The `nb_runr()` function includes improved handling for these cases, but we recommend using larger sample sizes and means when possible.
+:::
+
+```{r}
+# Set parameters for overdispersed count data
+nb_mean <- 15           # Mean count for control group
+nb_effect <- 3          # Maximum treatment effect
+nb_size <- 10           # Dispersion parameter (smaller = more overdispersion)
+nb_sample_sizes <- seq(15, 40, by = 5)  # Sample sizes
+
+# Run negative binomial simulations (suppress convergence warnings)
+suppressWarnings({
+  nb_results <- lapply(nb_sample_sizes, function(n_val) {
+    nb_runr(
+      num_sim = num_sim,
+      n = n_val,
+      mean = nb_mean,
+      max_trt_eff = nb_effect,
+      ntrts = 3,
+      size = nb_size,
+      distribution = "negbin"
+    )
+  })
+})
+
+# Calculate power
+nb_power <- do.call(rbind, nb_results) %>%
+  group_by(n) %>%
+  summarize(p.value = mean(p.value < 0.05, na.rm = TRUE), .groups = "drop")
+
+# Plot power curve
+ggplot(nb_power, aes(x = as.factor(n), y = p.value, group = 1)) +
+  geom_point() +
+  geom_line() +
+  geom_hline(yintercept = 0.8, linetype = "dashed") +
+  theme_bw() +
+  labs(x = "Sample Size per Group", y = "Statistical Power",
+       title = "Power Analysis for Negative Binomial Regression") +
+  ylim(0, 1)
+```
+
+# Advanced Visualization Options
+
+The `plot_pwr()` function provides flexible options for visualizing power analysis results.
+
+## Simple Group Comparison
+
+The default is to group by a variable (typically standard deviation or effect size) without faceting:
+
+```{r}
+# Create multiple scenarios with different effect sizes
+effect_sizes <- c(15, 20, 25)
+effect_scenarios <- expand.grid(
+  n = sample_sizes,
+  max_trt_eff = effect_sizes
+)
+
+# Run ANOVA simulations
+effect_results <- lapply(1:nrow(effect_scenarios), function(i) {
+  anova_runr(
+    num_sim = num_sim,
+    n = effect_scenarios$n[i],
+    mean = mean_value,
+    sd = 10,
+    max_trt_eff = effect_scenarios$max_trt_eff[i],
+    ntrts = 3
+  )
+})
+
+# Calculate power
+effect_power <- do.call(rbind, effect_results) %>%
+  group_by(n, max_trt_eff) %>%
+  summarize(p.value = mean(p.value < 0.05, na.rm = TRUE), .groups = "drop")
+
+# Plot with grouping by effect size
+effect_colors <- c("#00BFC4", "#F8766D", "#7CAE00")
+effect_plot <- plot_pwr(effect_power, effect_colors, group = "max_trt_eff", facet = NULL)
+print(effect_plot)
+```
+
+## Faceted Plot
+
+For more complex comparisons, you can use faceting:
+
+```{r}
+# Create faceted plot
+facet_plot <- plot_pwr(effect_power, effect_colors, group = "max_trt_eff", facet = "max_trt_eff")
+print(facet_plot)
+```
+
+# Best Practices for Power Analysis
+
+## Number of Simulations
+
+The number of simulations affects the stability of power estimates:
+
+```{r}
+# Function to run power analysis with different numbers of simulations
+simulate_with_n_sims <- function(n_sims) {
+  results <- anova_runr(
+    num_sim = n_sims,
+    n = 10,
+    mean = 100,
+    sd = 15,
+    max_trt_eff = 20,
+    ntrts = 3
+  )
+  
+  power <- mean(results$p.value < 0.05, na.rm = TRUE)
+  return(data.frame(n_sims = n_sims, power = power))
+}
+
+# Run with different simulation counts
+sim_counts <- c(10, 50, 100, 500, 1000)
+stability_results <- lapply(sim_counts, simulate_with_n_sims)
+stability_df <- do.call(rbind, stability_results)
+
+# Plot stability
+ggplot(stability_df, aes(x = as.factor(n_sims), y = power)) +
+  geom_point(size = 3) +
+  geom_line(aes(group = 1)) +
+  theme_bw() +
+  labs(x = "Number of Simulations", y = "Estimated Power",
+       title = "Effect of Simulation Count on Power Estimate Stability")
+```
+
+As shown above, more simulations generally provide more stable estimates. For final power analyses, we recommend at least 500-1000 simulations.
+
+## Balancing Considerations
+
+When planning a study, consider the following trade-offs:
+
+1.  **Statistical power vs. sample size**: Higher power requires larger samples
+2.  **Effect size detection**: Smaller effects require larger samples
+3.  **Variability impact**: More variable data (higher SD) requires larger samples
+4.  **Practical constraints**: Balance statistical ideals with real-world limitations
+
+## Interpretation Guidelines
+
+When interpreting power curves:
+
+1.  **Power threshold**: Conventionally set at 0.8 (80%)
+2.  **Sample size determination**: Find where the curve crosses the 0.8 line
+3.  **Diminishing returns**: Note where additional samples yield minimal power increases
+4.  **Conservative approach**: Consider using the upper end of your variability estimate
+5.  **Multiple comparisons**: Account for family-wise error rate with appropriate tests
+
+# Conclusion
+
+The `powrunr` package provides a flexible, simulation-based approach to power analysis across multiple statistical methods and data types. By determining adequate sample sizes before conducting studies, researchers can:
+
+1.  Increase the likelihood of detecting true effects
+2.  Reduce the risk of inconclusive results
+3.  Optimize resource allocation
+4.  Enhance reproducibility
+
+We encourage researchers to incorporate power analysis as a standard part of their experimental design process.
+
+## Additional Resources
+
+For more information on power analysis:
+
+-   Cohen, J. (1988). Statistical power analysis for the behavioral sciences (2nd ed.). Hillsdale, NJ: Lawrence Erlbaum Associates.
+-   Button, K. S., et al. (2013). Power failure: why small sample size undermines the reliability of neuroscience. Nature Reviews Neuroscience, 14(5), 365-376.
+-   Lakens, D. (2022). Sample Size Justification. Collabra: Psychology, 8(1).
